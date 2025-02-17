@@ -15,8 +15,8 @@ loader = instaloader.Instaloader(download_video_thumbnails=False, save_metadata=
 
 # Load or login to Instagram session
 SESSION_FILE = "session.json"
-USERNAME = "itz_tusarr"
-PASSWORD = "nothing1234"
+USERNAME = "your_instagram_username"
+PASSWORD = "your_instagram_password"
 
 if os.path.exists(SESSION_FILE):
     loader.load_session_from_file(USERNAME, SESSION_FILE)
@@ -26,10 +26,6 @@ else:
 
 # Flask App Setup
 app = Flask(__name__)
-API_URL = "https://karma-api2.vercel.app/instadl"
-DOWNLOADING_STICKER_ID = (
-    "CAACAgIAAx0CXfD_PwAC3X5lerw5fHE4kK-etOOqml5aYiHUNgAC2yYAAtBFgUq6SfkuZdHvGR4E"
-)
 
 @app.route('/download', methods=['GET'])
 def download_reel():
@@ -41,13 +37,11 @@ def download_reel():
         post_shortcode = url.split("/")[-2]
         post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
         
-        for node in post.get_sidecar_nodes() if post.typename == "GraphSidecar" else [post]:
-            if node.is_video:
-                return jsonify({"content_url": node.video_url, "content_type": "video"})
-            else:
-                return jsonify({"content_url": node.display_url, "content_type": "photo"})
-        
-        return jsonify({"error": "Unable to fetch content. Please check the Instagram URL."}), 400
+        if post.is_video:
+            return jsonify({"content_url": post.video_url, "content_type": "video"})
+        else:
+            return jsonify({"content_url": post.url, "content_type": "photo"})
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -70,21 +64,17 @@ async def direct_download_handler(_, message: Message):
         return
     
     try:
-        downloading_sticker = await message.reply_sticker(DOWNLOADING_STICKER_ID)
         post_shortcode = link.split("/")[-2]
         post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
         
-        for node in post.get_sidecar_nodes() if post.typename == "GraphSidecar" else [post]:
-            if node.is_video:
-                await message.reply_video(node.video_url)
-            else:
-                await message.reply_photo(node.display_url)
-        
+        if post.is_video:
+            await message.reply_video(post.video_url)
+        else:
+            await message.reply_photo(post.url)
+    
     except Exception as e:
         print(e)
         await message.reply("An error occurred while processing the request.")
-    finally:
-        await downloading_sticker.delete()
 
 if __name__ == '__main__':
     bot.run()
