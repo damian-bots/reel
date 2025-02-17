@@ -1,7 +1,9 @@
 import os
+import requests
 import instaloader
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify
 from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Bot Configuration
 API_ID = "24620300"
@@ -13,6 +15,10 @@ loader = instaloader.Instaloader(download_video_thumbnails=False, save_metadata=
 
 # Flask App Setup
 app = Flask(__name__)
+API_URL = "https://karma-api2.vercel.app/instadl"
+DOWNLOADING_STICKER_ID = (
+    "CAACAgIAAx0CXfD_PwAC3X5lerw5fHE4kK-etOOqml5aYiHUNgAC2yYAAtBFgUq6SfkuZdHvGR4E"
+)
 
 @app.route('/download', methods=['GET'])
 def download_reel():
@@ -21,30 +27,60 @@ def download_reel():
         return jsonify({"error": "Invalid Instagram Reels URL."}), 400
     
     try:
-        post_shortcode = url.split("/")[-2]
-        session_file = "session.json"
+        response = requests.get(API_URL, params={"url": url})
+        data = response.json()
 
-        if os.path.exists(session_file):
-            loader.load_session_from_file("itz_tusarr", session_file)
+        if "content_url" in data:
+            content_url = data["content_url"]
+            content_type = "video" if "video" in content_url else "photo"
+            return jsonify({"content_url": content_url, "content_type": content_type})
         else:
-            loader.login("itz_tusarr", "nothing1234")  # First-time login
-            loader.save_session_to_file(session_file)
-        
-        post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
-        loader.download_post(post, target="downloads")
-        
-        for file in os.listdir("downloads"):
-            if file.endswith(".mp4"):
-                video_path = os.path.join("downloads", file)
-                return send_file(video_path, as_attachment=True)
-        
-        return jsonify({"error": "Video not found after download."}), 500
-    except instaloader.exceptions.BadCredentialsException:
-        return jsonify({"error": "Login failed. Check your credentials."}), 401
-    except instaloader.exceptions.CheckpointRequiredException:
-        return jsonify({"error": "Checkpoint required. Verify login manually."}), 403
+            return jsonify({"error": "Unable to fetch content. Please check the Instagram URL."}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@bot.on_message(filters.command("start"))
+async def start_command(_, message: Message):
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Join Channel", url="https://t.me/yourchannel")],
+        [InlineKeyboardButton("Support", url="https://t.me/yoursupport")]
+    ])
+    await message.reply_text(
+        "**Welcome to Instagram Reels Downloader Bot!**\n\nSend me an Instagram Reel link, and I'll download it for you.",
+        reply_markup=buttons
+    )
+
+@bot.on_message(filters.command(["ig", "instagram", "insta", "instadl"]) | filters.text)
+async def instadl_command_handler(_, message: Message):
+    link = message.text.strip()
+    if "instagram.com/reel/" not in link and "instagram.com/p/" not in link:
+        await message.reply("Please send a valid Instagram Reels link!")
+        return
+    
+    try:
+        downloading_sticker = await message.reply_sticker(DOWNLOADING_STICKER_ID)
+        response = requests.get(API_URL, params={"url": link})
+        data = response.json()
+
+        if "content_url" in data:
+            content_url = data["content_url"]
+            content_type = "video" if "video" in content_url else "photo"
+
+            if content_type == "photo":
+                await message.reply_photo(content_url)
+            elif content_type == "video":
+                await message.reply_video(content_url)
+            else:
+                await message.reply("Unsupported content type.")
+        else:
+            await message.reply("Unable to fetch content. Please check the Instagram URL.")
+    except Exception as e:
+        print(e)
+        await message.reply("An error occurred while processing the request.")
+    finally:
+        await downloading_sticker.delete()
+
 if __name__ == '__main__':
+    bot.start()
     app.run(host='0.0.0.0', port=5000)
+    bot.stop()
