@@ -8,7 +8,7 @@ API_HASH = "9a098f01aa56c836f2e34aee4b7ef963"
 BOT_TOKEN = "8001341321:AAGF8SbLP-JBr5rTC6j_J6bZfRR6L8r0OQo"
 
 bot = Client("insta_reels_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-loader = instaloader.Instaloader()
+loader = instaloader.Instaloader(download_video_thumbnails=False, save_metadata=False)
 
 @bot.on_message(filters.command("start"))
 def start(client, message):
@@ -21,7 +21,9 @@ def download_reel(client, message):
         message.reply_text("Downloading... Please wait.")
         try:
             post_shortcode = url.split("/")[-2]
-            loader.download_post(instaloader.Post.from_shortcode(loader.context, post_shortcode), target="downloads")
+            loader.login("itz_tusarr", "nothing1234")  # Login to avoid 401 error
+            post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
+            loader.download_post(post, target="downloads")
             
             # Find the downloaded video file
             for file in os.listdir("downloads"):
