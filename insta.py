@@ -21,7 +21,15 @@ def download_reel(client, message):
         message.reply_text("Downloading... Please wait.")
         try:
             post_shortcode = url.split("/")[-2]
-            loader.login("itz_tusarr", "nothing1234")  # Login to avoid 401 error
+            
+            # Load session if available to avoid checkpoint issues
+            session_file = "session.json"
+            if os.path.exists(session_file):
+                loader.load_session_from_file("itz_tusarr", session_file)
+            else:
+                loader.login("itz_tusarr", "nothing1234")  # First-time login
+                loader.save_session_to_file(session_file)
+            
             post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
             loader.download_post(post, target="downloads")
             
@@ -32,6 +40,12 @@ def download_reel(client, message):
                     message.reply_video(video_path)
                     os.remove(video_path)  # Clean up after sending
                     break
+        except instaloader.exceptions.BadCredentialsException:
+            message.reply_text("Login failed. Please check your credentials.")
+        except instaloader.exceptions.TwoFactorAuthRequiredException:
+            message.reply_text("2FA is enabled. Complete the challenge on Instagram and retry.")
+        except instaloader.exceptions.CheckpointRequiredException:
+            message.reply_text("Checkpoint required. Log in to Instagram and verify the challenge manually, then retry.")
         except Exception as e:
             message.reply_text(f"Error: {str(e)}")
     else:
