@@ -13,6 +13,17 @@ BOT_TOKEN = "8001341321:AAGF8SbLP-JBr5rTC6j_J6bZfRR6L8r0OQo"
 bot = Client("insta_reels_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 loader = instaloader.Instaloader(download_video_thumbnails=False, save_metadata=False)
 
+# Load or login to Instagram session
+SESSION_FILE = "session.json"
+USERNAME = "itz_tusarr"
+PASSWORD = "nothing1234"
+
+if os.path.exists(SESSION_FILE):
+    loader.load_session_from_file(USERNAME, SESSION_FILE)
+else:
+    loader.login(USERNAME, PASSWORD)
+    loader.save_session_to_file(SESSION_FILE)
+
 # Flask App Setup
 app = Flask(__name__)
 API_URL = "https://karma-api2.vercel.app/instadl"
@@ -27,15 +38,16 @@ def download_reel():
         return jsonify({"error": "Invalid Instagram Reels URL."}), 400
     
     try:
-        response = requests.get(API_URL, params={"url": url})
-        data = response.json()
-
-        if "content_url" in data:
-            content_url = data["content_url"]
-            content_type = "video" if "video" in content_url else "photo"
-            return jsonify({"content_url": content_url, "content_type": content_type})
-        else:
-            return jsonify({"error": "Unable to fetch content. Please check the Instagram URL."}), 400
+        post_shortcode = url.split("/")[-2]
+        post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
+        
+        for node in post.get_sidecar_nodes() if post.typename == "GraphSidecar" else [post]:
+            if node.is_video:
+                return jsonify({"content_url": node.video_url, "content_type": "video"})
+            else:
+                return jsonify({"content_url": node.display_url, "content_type": "photo"})
+        
+        return jsonify({"error": "Unable to fetch content. Please check the Instagram URL."}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -59,21 +71,15 @@ async def direct_download_handler(_, message: Message):
     
     try:
         downloading_sticker = await message.reply_sticker(DOWNLOADING_STICKER_ID)
-        response = requests.get(API_URL, params={"url": link})
-        data = response.json()
-
-        if "content_url" in data:
-            content_url = data["content_url"]
-            content_type = "video" if "video" in content_url else "photo"
-
-            if content_type == "photo":
-                await message.reply_photo(content_url)
-            elif content_type == "video":
-                await message.reply_video(content_url)
+        post_shortcode = link.split("/")[-2]
+        post = instaloader.Post.from_shortcode(loader.context, post_shortcode)
+        
+        for node in post.get_sidecar_nodes() if post.typename == "GraphSidecar" else [post]:
+            if node.is_video:
+                await message.reply_video(node.video_url)
             else:
-                await message.reply("Unsupported content type.")
-        else:
-            await message.reply("Unable to fetch content. Please check the Instagram URL.")
+                await message.reply_photo(node.display_url)
+        
     except Exception as e:
         print(e)
         await message.reply("An error occurred while processing the request.")
