@@ -50,8 +50,8 @@ async def start_command(_, message: Message):
         reply_markup=buttons
     )
 
-@bot.on_message(filters.command(["ig", "instagram", "insta", "instadl"]) | filters.text)
-async def instadl_command_handler(_, message: Message):
+@bot.on_message(filters.text & filters.private)
+async def direct_download_handler(_, message: Message):
     link = message.text.strip()
     if "instagram.com/reel/" not in link and "instagram.com/p/" not in link:
         await message.reply("Please send a valid Instagram Reels link!")
@@ -81,6 +81,5 @@ async def instadl_command_handler(_, message: Message):
         await downloading_sticker.delete()
 
 if __name__ == '__main__':
-    bot.start()
+    bot.run()
     app.run(host='0.0.0.0', port=5000)
-    bot.stop()
