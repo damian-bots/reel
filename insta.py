@@ -21,8 +21,13 @@ PASSWORD = "nothing1234"
 if os.path.exists(SESSION_FILE):
     loader.load_session_from_file(USERNAME, SESSION_FILE)
 else:
-    loader.login(USERNAME, PASSWORD)
-    loader.save_session_to_file(SESSION_FILE)
+    try:
+        loader.login(USERNAME, PASSWORD)
+        loader.save_session_to_file(SESSION_FILE)
+    except instaloader.exceptions.BadCredentialsException:
+        print("Invalid Instagram credentials.")
+    except instaloader.exceptions.TwoFactorAuthRequiredException:
+        print("2FA required. Complete authentication manually.")
 
 # Flask App Setup
 app = Flask(__name__)
@@ -42,14 +47,18 @@ def download_reel():
         else:
             return jsonify({"content_url": post.url, "content_type": "photo"})
     
+    except instaloader.exceptions.PrivateProfileNotFollowedException:
+        return jsonify({"error": "This profile is private. Cannot download content."}), 403
+    except instaloader.exceptions.QueryReturnedNotFoundException:
+        return jsonify({"error": "Content not found. Please check the URL."}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @bot.on_message(filters.command("start"))
 async def start_command(_, message: Message):
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Join Channel", url="https://t.me/yourchannel")],
-        [InlineKeyboardButton("Support", url="https://t.me/yoursupport")]
+        [InlineKeyboardButton("Join Channel 📢", url="https://t.me/DeadlineTech")],
+        [InlineKeyboardButton("Support 💬", url="https://t.me/DeadlineTechsupport")]
     ])
     await message.reply_text(
         "**Welcome to Instagram Reels Downloader Bot!**\n\nSend me an Instagram Reel link, and I'll download it for you.",
@@ -72,10 +81,14 @@ async def direct_download_handler(_, message: Message):
         else:
             await message.reply_photo(post.url)
     
+    except instaloader.exceptions.PrivateProfileNotFollowedException:
+        await message.reply("This profile is private. Cannot download content.")
+    except instaloader.exceptions.QueryReturnedNotFoundException:
+        await message.reply("Content not found. Please check the URL.")
     except Exception as e:
         print(e)
         await message.reply("An error occurred while processing the request.")
 
 if __name__ == '__main__':
     bot.run()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='4.213.247.72', port=22)
