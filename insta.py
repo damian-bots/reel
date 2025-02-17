@@ -15,8 +15,8 @@ loader = instaloader.Instaloader(download_video_thumbnails=False, save_metadata=
 
 # Load or login to Instagram session
 SESSION_FILE = "session.json"
-USERNAME = "your_instagram_username"
-PASSWORD = "your_instagram_password"
+USERNAME = "itz_tusarr"
+PASSWORD = "nothing1234"
 
 if os.path.exists(SESSION_FILE):
     loader.load_session_from_file(USERNAME, SESSION_FILE)
