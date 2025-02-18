@@ -171,3 +171,5 @@ async def check_win_condition(client, chat_id):
         await app.send_message(chat_id, "😈 The Mafia have taken over! Mafia wins! 😈")
         del games[chat_id]
         return
+        
+app.run() 
