@@ -48,7 +48,7 @@ async def register(client, message):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{bot_username}?start=register_{chat_id}")]])
     )
 
-    await asyncio.sleep(30)  # 30 seconds for registration
+    await asyncio.sleep(120)  # 30 seconds for registration
     player_count = len(games[chat_id]["players"])
     
     if player_count < 4:
