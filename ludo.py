@@ -3,7 +3,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 import random
 import asyncio
 
-app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI")
+app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="YOUR_BOT_TOKEN")
 
 games = {}
 registered_users = {}
@@ -20,29 +20,33 @@ roles = {
 
 @app.on_message(filters.command("start"))
 def start(client, message):
-    chat_id = message.chat.id
-
     message.reply_text(
-        "Welcome to Mafia Game! Click below to start a new game.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Start Game", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
+        "**🎭 Welcome to Mafia Game! 🎭**\n\n"
+        "Mafia is a strategic game where players take on secret roles. The game consists of two phases:\n"
+        "🔹 **Night:** Special roles (Mafia, Detective, Doctor, etc.) act in secrecy.\n"
+        "🔹 **Day:** Players discuss and vote to eliminate a suspect.\n\n"
+        "💀 The game ends when either the Mafia or Villagers win!\n\n"
+        "Click **/register** to join the game!",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register Now", callback_data="register_players")]])
     )
 
 @app.on_message(filters.command("register"))
-async def register_players(client, message):
+async def register(client, message):
     chat_id = message.chat.id
 
     if chat_id in games:
-        message.answer("A game is already in progress!", show_alert=True)
+        await message.reply_text("A game is already in progress!")
         return
 
     games[chat_id] = {"players": {}, "status": "registering"}
     
-    message.edit(
-        "A new Mafia game has started!\n\nPlayers, click below to register in PM.",
+    await message.reply_text(
+        "**📝 Registration Started!**\n\n"
+        "Players, click the button below to register in **PM**.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
     )
 
-    await asyncio.sleep(30)  # Registration lasts 30 seconds
+    await asyncio.sleep(30)  # 30 seconds for registration
     player_count = len(games[chat_id]["players"])
     
     if player_count < 4:
