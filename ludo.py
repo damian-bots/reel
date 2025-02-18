@@ -18,7 +18,7 @@ roles = {
     "Serial Killer": "Kills one player per night, independent of the Mafia."
 }
 
-@app.on_message(filters.command("start"))
+@app.on_message(filters.command("help"))
 async def start(client, message):
     await message.reply_text(
         "**🎭 Welcome to the Mafia Game! 🎭**\n\n"
