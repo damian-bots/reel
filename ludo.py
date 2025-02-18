@@ -1,66 +1,139 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import random
+import asyncio
 
-# Store game data
-games = {}
+# Initialize bot
+app = Client("ludo_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI")
 
-def start(update: Update, context: CallbackContext):
-    chat_id = update.message.chat_id
+games = {}  # Stores ongoing games
+
+# Start command
+@app.on_message(filters.command("start"))
+def start(client, message):
+    message.reply_text(
+        "Welcome to Ludo Inline Game! Click below to start a new game:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Start Game", callback_data="start_ludo")]
+        ])
+    )
+
+# Start a new game
+@app.on_callback_query(filters.regex("start_ludo"))
+def new_game(client, callback_query: CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    user_id = callback_query.from_user.id
+    username = callback_query.from_user.username or callback_query.from_user.first_name
+
+    if chat_id in games:
+        callback_query.answer("A game is already in progress!", show_alert=True)
+        return
+
     games[chat_id] = {
-        "players": {},
-        "turn_order": [],
+        "players": {user_id: {"name": username, "position": 0}},
+        "turn_order": [user_id],
         "current_turn": 0,
+        "game_active": True
     }
-    keyboard = [[InlineKeyboardButton("Join Game", callback_data="join")]]
-    update.message.reply_text("Ludo Game Started! Click to join.", 
-                              reply_markup=InlineKeyboardMarkup(keyboard))
 
-def join_game(update: Update, context: CallbackContext):
-    query = update.callback_query
-    chat_id = query.message.chat_id
-    user_id = query.from_user.id
-    username = query.from_user.first_name
+    callback_query.message.edit(
+        f"Ludo game started! Players: @{username}\n\nWaiting for more players...",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Join Game", callback_data="join_ludo")],
+            [InlineKeyboardButton("Start Match", callback_data="start_match")]
+        ])
+    )
+
+# Join an existing game
+@app.on_callback_query(filters.regex("join_ludo"))
+def join_game(client, callback_query: CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    user_id = callback_query.from_user.id
+    username = callback_query.from_user.username or callback_query.from_user.first_name
+
+    if chat_id not in games or not games[chat_id]["game_active"]:
+        callback_query.answer("No active game to join!", show_alert=True)
+        return
+
+    if user_id in games[chat_id]["players"]:
+        callback_query.answer("You have already joined!", show_alert=True)
+        return
+
+    if len(games[chat_id]["players"]) >= 4:
+        callback_query.answer("Game is full (max 4 players)!", show_alert=True)
+        return
+
+    games[chat_id]["players"][user_id] = {"name": username, "position": 0}
+    games[chat_id]["turn_order"].append(user_id)
+
+    players_list = "\n".join([f"@{p['name']}" for p in games[chat_id]["players"].values()])
+    callback_query.message.edit(
+        f"Ludo game started! Players:\n{players_list}\n\nWaiting for more players...",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Join Game", callback_data="join_ludo")],
+            [InlineKeyboardButton("Start Match", callback_data="start_match")]
+        ])
+    )
+
+# Start the match
+@app.on_callback_query(filters.regex("start_match"))
+def start_match(client, callback_query: CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    if chat_id not in games or not games[chat_id]["game_active"]:
+        callback_query.answer("No active game to start!", show_alert=True)
+        return
+
+    if len(games[chat_id]["players"]) < 2:
+        callback_query.answer("At least 2 players are required!", show_alert=True)
+        return
+
+    current_player_id = games[chat_id]["turn_order"][0]
+    current_player_name = games[chat_id]["players"][current_player_id]["name"]
     
-    if chat_id not in games or len(games[chat_id]["players"]) >= 4:
-        query.answer("Game is full or not started!")
+    callback_query.message.edit(
+        f"Match started! 🎲 {current_player_name}, it's your turn to roll!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Roll Dice 🎲", callback_data="roll_dice")]
+        ])
+    )
+
+# Roll dice
+@app.on_callback_query(filters.regex("roll_dice"))
+def roll_dice(client, callback_query: CallbackQuery):
+    chat_id = callback_query.message.chat.id
+    user_id = callback_query.from_user.id
+    
+    if chat_id not in games or not games[chat_id]["game_active"]:
+        callback_query.answer("No active game!", show_alert=True)
+        return
+
+    game = games[chat_id]
+    current_player_id = game["turn_order"][game["current_turn"]]
+    
+    if user_id != current_player_id:
+        callback_query.answer("Wait for your turn!", show_alert=True)
+        return
+
+    dice_value = random.randint(1, 6)
+    game["players"][user_id]["position"] += dice_value
+    position = game["players"][user_id]["position"]
+    
+    if position >= 30:  # Winning condition (reaching 30 points)
+        callback_query.message.edit(f"🎉 @{game['players'][user_id]['name']} has won the game! 🎉")
+        del games[chat_id]
         return
     
-    if user_id not in games[chat_id]["players"]:
-        games[chat_id]["players"][user_id] = {"position": 0}
-        games[chat_id]["turn_order"].append(user_id)
-        query.answer(f"{username} joined!")
-        query.message.edit_text(f"Players: {', '.join([context.bot.get_chat_member(chat_id, pid).user.first_name for pid in games[chat_id]['players']])}\nWaiting for more players or /roll to start!")
-    else:
-        query.answer("You are already in the game!")
+    next_turn = (game["current_turn"] + 1) % len(game["turn_order"])
+    game["current_turn"] = next_turn
+    next_player_id = game["turn_order"][next_turn]
+    next_player_name = game["players"][next_player_id]["name"]
+    
+    callback_query.message.edit(
+        f"🎲 @{game['players'][user_id]['name']} rolled a {dice_value} (Position: {position})\n\n"
+        f"Next turn: {next_player_name}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Roll Dice 🎲", callback_data="roll_dice")]
+        ])
+    )
 
-def roll_dice(update: Update, context: CallbackContext):
-    chat_id = update.message.chat_id
-    if chat_id not in games or len(games[chat_id]["players"]) < 2:
-        update.message.reply_text("At least 2 players needed to start!")
-        return
-    
-    turn = games[chat_id]["current_turn"]
-    player_id = games[chat_id]["turn_order"][turn]
-    dice_roll = random.randint(1, 6)
-    games[chat_id]["players"][player_id]["position"] += dice_roll
-    player_name = context.bot.get_chat_member(chat_id, player_id).user.first_name
-    
-    message = f"{player_name} rolled a {dice_roll}! New position: {games[chat_id]['players'][player_id]['position']}"
-    
-    games[chat_id]["current_turn"] = (turn + 1) % len(games[chat_id]["turn_order"])
-    update.message.reply_text(message)
-
-def main():
-    updater = Updater("7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI", use_context=True)
-    dp = updater.dispatcher
-    
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CallbackQueryHandler(join_game, pattern="^join$"))
-    dp.add_handler(CommandHandler("roll", roll_dice))
-    
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+app.run()
