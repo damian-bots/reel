@@ -43,7 +43,7 @@ async def register(client, message):
     await message.reply_text(
         "**📝 Registration Started!**\n\n"
         "Players, click the button below to register in **PM**.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{app.me.username}?start=register_{chat_id}")]])
     )
 
     await asyncio.sleep(30)  # 30 seconds for registration
