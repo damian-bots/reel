@@ -1,7 +1,8 @@
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ChatPermissions
 import random
 import asyncio
+import time
 
 app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI")
 
@@ -18,8 +19,8 @@ roles = {
     "Serial Killer": "Kills one player per night, independent of the Mafia."
 }
 
-NIGHT_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExN2o5OGN6eDZiN2cyZ3ZneXgzZXBqZW44bXFudmM0cG5ydTZvbWR0biZlcD12MV9naWZzX3NlYXJjaCZjdD1n/LmNwrBhejkK9EFP504/giphy.gif"
-DAY_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGQzOXh0bjRqZzZrb2dyb3Q1YzF2Y2d3bm9pZHZ3MW51NzU3ZzE0dSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/WF9evUeT4cudYZtPVF/giphy.gif"
+NIGHT_GIF = "https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif"
+DAY_GIF = "https://media.giphy.com/media/WF9evUeT4cudYZtPVF/giphy.gif"
 
 @app.on_message(filters.command("help"))
 async def start(client, message):
@@ -31,7 +32,6 @@ async def start(client, message):
 @app.on_message(filters.command("register"))
 async def register(client, message):
     chat_id = message.chat.id
-
     if chat_id in games:
         await message.reply_text("⚠️ A game is already in progress!")
         return
@@ -47,9 +47,8 @@ async def register(client, message):
     )
 
     await asyncio.sleep(30)
-    player_count = len(games[chat_id]["players"])
 
-    if player_count < 4:
+    if len(games[chat_id]["players"]) < 4:
         await app.send_message(chat_id, "⚠️ Not enough players (min 4). Try again later.")
         del games[chat_id]
     else:
@@ -81,7 +80,7 @@ async def confirm_registration(client, callback_query: CallbackQuery):
     chat_id = registered_users.get(user_id)
 
     if not chat_id or chat_id not in games or games[chat_id]["status"] != "registering":
-        callback_query.answer("⚠️ No active game found!", show_alert=True)
+        await callback_query.answer("⚠️ No active game found!", show_alert=True)
         return
 
     username = callback_query.from_user.username or callback_query.from_user.first_name
@@ -127,42 +126,38 @@ def assign_roles(player_count):
     return role_distribution
 
 async def night_phase(client, chat_id):
-    game = games[chat_id]
-
     await app.send_animation(chat_id, NIGHT_GIF, caption="🌙 Night falls. Everyone goes to sleep...")
     await asyncio.sleep(5)
 
     await day_phase(client, chat_id)
 
 async def day_phase(client, chat_id):
-    game = games[chat_id]
-
     await app.send_animation(chat_id, DAY_GIF, caption="☀️ The sun rises. A new day begins!")
     await asyncio.sleep(5)
 
-    buttons = [
-        [InlineKeyboardButton(f"{game['players'][uid]['name']}", callback_data=f"lynch_{uid}")]
-        for uid, data in game["players"].items() if data["alive"]
-    ]
+    buttons = [[InlineKeyboardButton(game["players"][uid]["name"], callback_data=f"lynch_{uid}")]
+               for uid, data in games[chat_id]["players"].items() if data["alive"]]
+
     await app.send_message(
-        chat_id, "🗳 Vote to lynch a player:",
-        reply_markup=InlineKeyboardMarkup(buttons + [[InlineKeyboardButton("Update", callback_data="update_game")]])
+        chat_id, "🗳 Vote to lynch a player (30s):",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-@app.on_callback_query(filters.regex("update_game"))
-async def update_game(client, callback_query: CallbackQuery):
-    await callback_query.answer("✅ Game state updated!", show_alert=True)
+    await asyncio.sleep(30)
 
-@app.on_callback_query(filters.regex(r"lynch_\d+"))
-async def process_lynching(client, callback_query: CallbackQuery):
-    target_id = int(callback_query.data.split("_")[1])
-    for chat_id, game in games.items():
-        if target_id in game["players"]:
-            game["players"][target_id]["alive"] = False
-            await app.send_message(chat_id, f"⚖️ {game['players'][target_id]['name']} was lynched!")
-            break
+    target_id = random.choice([uid for uid, data in games[chat_id]["players"].items() if data["alive"]])
+    games[chat_id]["players"][target_id]["alive"] = False
+
+    await mute_player(chat_id, target_id)
+    await app.send_message(chat_id, f"⚖️ {games[chat_id]['players'][target_id]['name']} was lynched!")
 
     await check_win_condition(client, chat_id)
+
+async def mute_player(chat_id, user_id):
+    try:
+        await app.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
+    except:
+        pass
 
 async def check_win_condition(client, chat_id):
     game = games[chat_id]
