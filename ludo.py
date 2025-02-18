@@ -20,6 +20,8 @@ roles = {
 
 @app.on_message(filters.command("start"))
 def start(client, message):
+    chat_id = message.chat.id
+
     message.reply_text(
         "Welcome to Mafia Game! Click below to start a new game.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Start Game", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
