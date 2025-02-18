@@ -3,7 +3,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 import random
 import asyncio
 
-app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="YOUR_BOT_TOKEN")
+app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI")
 
 games = {}
 registered_users = {}
@@ -18,15 +18,14 @@ roles = {
     "Serial Killer": "Kills one player per night, independent of the Mafia."
 }
 
+NIGHT_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExN2o5OGN6eDZiN2cyZ3ZneXgzZXBqZW44bXFudmM0cG5ydTZvbWR0biZlcD12MV9naWZzX3NlYXJjaCZjdD1n/LmNwrBhejkK9EFP504/giphy.gif"
+DAY_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGQzOXh0bjRqZzZrb2dyb3Q1YzF2Y2d3bm9pZHZ3MW51NzU3ZzE0dSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/WF9evUeT4cudYZtPVF/giphy.gif"
+
 @app.on_message(filters.command("help"))
 async def start(client, message):
     await message.reply_text(
         "**🎭 Welcome to the Mafia Game! 🎭**\n\n"
-        "Mafia is a strategic game of deception and deduction. Players take on secret roles and try to eliminate the opposing faction.\n\n"
-        "🔹 **Night Phase:** Special roles (Mafia, Doctor, Detective, etc.) act in secrecy.\n"
-        "🔹 **Day Phase:** Players discuss and vote to eliminate a suspect.\n\n"
-        "💀 The game ends when either the **Mafia** or **Villagers** win!\n\n"
-        "Click **/register** to join the next game!",
+        "Click **/register** to join the next game!"
     )
 
 @app.on_message(filters.command("register"))
@@ -43,16 +42,15 @@ async def register(client, message):
     bot_username = bot_info.username
 
     await message.reply_text(
-        "**📝 Registration Started!**\n\n"
-        "Players, click the button below to register in **PM**.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{bot_username}?start=register_{chat_id}")]])
+        "Players, click below to register in **PM**.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register", url=f"https://t.me/{bot_username}?start=register_{chat_id}")]])
     )
 
-    await asyncio.sleep(30)  # 30 seconds for registration
+    await asyncio.sleep(30)
     player_count = len(games[chat_id]["players"])
 
     if player_count < 4:
-        await app.send_message(chat_id, "⚠️ Not enough players to start the game (min 4 required). Try again later.")
+        await app.send_message(chat_id, "⚠️ Not enough players (min 4). Try again later.")
         del games[chat_id]
     else:
         await start_game(client, chat_id)
@@ -64,17 +62,17 @@ async def private_start(client, message):
         user_id = message.from_user.id
 
         if chat_id not in games or games[chat_id]["status"] != "registering":
-            await message.reply_text("⚠️ No active game available to register for!")
+            await message.reply_text("⚠️ No active game available!")
             return
 
         if user_id in games[chat_id]["players"]:
             await message.reply_text("✅ You are already registered!")
             return
 
-        registered_users[user_id] = chat_id  # Store registration context
+        registered_users[user_id] = chat_id
         await message.reply_text(
-            "Click below to confirm your registration.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm Registration", callback_data="confirm_register")]])
+            "Click below to confirm registration.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm", callback_data="confirm_register")]])
         )
 
 @app.on_callback_query(filters.regex("confirm_register"))
@@ -87,7 +85,7 @@ async def confirm_registration(client, callback_query: CallbackQuery):
         return
 
     username = callback_query.from_user.username or callback_query.from_user.first_name
-    games[chat_id]["players"][user_id] = {"name": username, "role": None, "alive": True}
+    games[chat_id]["players"][user_id] = {"name": username, "role": None, "alive": True, "lynched": False}
 
     await callback_query.message.edit_text("✅ Registration successful! Wait for the game to start.")
 
@@ -111,7 +109,6 @@ async def start_game(client, chat_id):
         except:
             pass
 
-    await app.send_message(chat_id, "🔮 The game has begun! The night phase starts now.")
     await night_phase(client, chat_id)
 
 def assign_roles(player_count):
@@ -132,38 +129,51 @@ def assign_roles(player_count):
 async def night_phase(client, chat_id):
     game = games[chat_id]
 
-    for user_id, data in game["players"].items():
-        if data["alive"] and data["role"] in ["Detective", "Doctor", "Mafia", "Godfather", "Serial Killer"]:
-            buttons = [
-                [InlineKeyboardButton(f"{game['players'][target]['name']}", callback_data=f"act_{user_id}_{target}")]
-                for target in game["players"] if target != user_id and game["players"][target]["alive"]
-            ]
-            if buttons:
-                await app.send_message(user_id, "🔪 Choose your target:", reply_markup=InlineKeyboardMarkup(buttons))
+    await app.send_animation(chat_id, NIGHT_GIF, caption="🌙 Night falls. Everyone goes to sleep...")
+    await asyncio.sleep(5)
 
-    await asyncio.sleep(30)
+    await day_phase(client, chat_id)
 
-@app.on_callback_query(filters.regex(r"act_\d+_\d+"))
-async def process_night_action(client, callback_query: CallbackQuery):
-    parts = callback_query.data.split("_")
-    actor_id, target_id = int(parts[1]), int(parts[2])
-    
+async def day_phase(client, chat_id):
+    game = games[chat_id]
+
+    await app.send_animation(chat_id, DAY_GIF, caption="☀️ The sun rises. A new day begins!")
+    await asyncio.sleep(5)
+
+    buttons = [
+        [InlineKeyboardButton(f"{game['players'][uid]['name']}", callback_data=f"lynch_{uid}")]
+        for uid, data in game["players"].items() if data["alive"]
+    ]
+    await app.send_message(
+        chat_id, "🗳 Vote to lynch a player:",
+        reply_markup=InlineKeyboardMarkup(buttons + [[InlineKeyboardButton("Update", callback_data="update_game")]])
+    )
+
+@app.on_callback_query(filters.regex("update_game"))
+async def update_game(client, callback_query: CallbackQuery):
+    await callback_query.answer("✅ Game state updated!", show_alert=True)
+
+@app.on_callback_query(filters.regex(r"lynch_\d+"))
+async def process_lynching(client, callback_query: CallbackQuery):
+    target_id = int(callback_query.data.split("_")[1])
     for chat_id, game in games.items():
-        if actor_id in game["players"]:
-            role = game["players"][actor_id]["role"]
-            target_name = game["players"][target_id]["name"]
-
-            if role == "Mafia":
-                await app.send_message(chat_id, f"☠️ The Mafia has chosen to attack {target_name}.")
-            elif role == "Doctor":
-                await app.send_message(chat_id, f"🚑 The Doctor has chosen to heal {target_name}.")
-            elif role == "Detective":
-                await app.send_message(chat_id, f"🔍 The Detective investigated {target_name} and found their role: {game['players'][target_id]['role']}.")
-            elif role == "Serial Killer":
-                await app.send_message(chat_id, f"🔪 The Serial Killer has attacked {target_name}.")
-
+        if target_id in game["players"]:
+            game["players"][target_id]["alive"] = False
+            await app.send_message(chat_id, f"⚖️ {game['players'][target_id]['name']} was lynched!")
             break
 
-    await callback_query.message.edit_text("✅ Action recorded! Waiting for other players.")
+    await check_win_condition(client, chat_id)
+
+async def check_win_condition(client, chat_id):
+    game = games[chat_id]
+    mafia_alive = any(data["role"] in ["Mafia", "Godfather"] and data["alive"] for data in game["players"].values())
+    villagers_alive = any(data["role"] == "Villager" and data["alive"] for data in game["players"].values())
+
+    if not mafia_alive:
+        await app.send_message(chat_id, "🎉 Villagers win!")
+    elif not villagers_alive:
+        await app.send_message(chat_id, "💀 Mafia wins!")
+    else:
+        await night_phase(client, chat_id)
 
 app.run()
