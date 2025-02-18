@@ -27,7 +27,7 @@ def start(client, message):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Start Game", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
     )
 
-@app.on_message(filters.command("start"))
+@app.on_message(filters.command("register"))
 async def register_players(client, message):
     chat_id = message.chat.id
 
