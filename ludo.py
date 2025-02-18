@@ -6,6 +6,7 @@ import asyncio
 app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI")
 
 games = {}
+registered_users = {}
 
 roles = {
     "Villager": "No special abilities.",
@@ -35,35 +36,58 @@ async def register_players(client, callback_query: CallbackQuery):
     games[chat_id] = {"players": {}, "status": "registering"}
     
     callback_query.message.edit(
-        "A new Mafia game has started!\n\nPlayers, click below to join:",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Join Game", callback_data="join_game")]])
+        "A new Mafia game has started!\n\nPlayers, click below to register in PM.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
     )
 
     await asyncio.sleep(30)  # Registration lasts 30 seconds
     player_count = len(games[chat_id]["players"])
     
     if player_count < 4:
-        callback_query.message.edit("Not enough players to start the game (min 4 required). Try again later.")
+        await app.send_message(chat_id, "Not enough players to start the game (min 4 required). Try again later.")
         del games[chat_id]
     else:
         await start_game(client, chat_id)
 
-@app.on_callback_query(filters.regex("join_game"))
-def join_game(client, callback_query: CallbackQuery):
-    chat_id = callback_query.message.chat.id
+@app.on_message(filters.private & filters.command("start"))
+async def private_start(client, message):
+    if message.text.startswith("/start register_"):
+        chat_id = int(message.text.split("_")[-1])
+        user_id = message.from_user.id
+        username = message.from_user.username or message.from_user.first_name
+
+        if chat_id not in games or games[chat_id]["status"] != "registering":
+            await message.reply_text("No active game to register for!")
+            return
+
+        if user_id in games[chat_id]["players"]:
+            await message.reply_text("You're already registered!")
+            return
+
+        registered_users[user_id] = chat_id  # Store where they are registering from
+        await message.reply_text(
+            "Click below to confirm your registration.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm Registration", callback_data="confirm_register")]])
+        )
+
+@app.on_callback_query(filters.regex("confirm_register"))
+async def confirm_registration(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
+    chat_id = registered_users.get(user_id)
+
+    if not chat_id or chat_id not in games or games[chat_id]["status"] != "registering":
+        callback_query.answer("No active game found!", show_alert=True)
+        return
+
     username = callback_query.from_user.username or callback_query.from_user.first_name
-
-    if chat_id not in games or games[chat_id]["status"] != "registering":
-        callback_query.answer("No active game to join!", show_alert=True)
-        return
-
-    if user_id in games[chat_id]["players"]:
-        callback_query.answer("You're already in the game!", show_alert=True)
-        return
-
     games[chat_id]["players"][user_id] = {"name": username, "role": None, "alive": True}
-    callback_query.answer(f"{username} joined the game!", show_alert=True)
+    
+    callback_query.message.edit_text("✅ Registration successful! Wait for the game to start.")
+    
+    try:
+        await app.send_message(chat_id, f"🔹 {username} has registered for the game!")
+    except:
+        pass  # Ignore if the group can't be messaged
 
 async def start_game(client, chat_id):
     game = games[chat_id]
@@ -77,7 +101,7 @@ async def start_game(client, chat_id):
     for user_id, role in zip(player_list, assigned_roles):
         game["players"][user_id]["role"] = role
         try:
-            await app.send_message(user_id, f"Your role: {role}\n{roles[role]}")
+            await app.send_message(user_id, f"🎭 Your role: {role}\n\n{roles[role]}")
         except:
             pass  # Ignore if user can't be messaged
 
@@ -115,33 +139,6 @@ async def night_phase(client, chat_id):
     await asyncio.sleep(30)
     await day_phase(client, chat_id)
 
-async def day_phase(client, chat_id):
-    game = games[chat_id]
-    
-    # Process night results
-    killed_players = [user_id for user_id, data in game["players"].items() if data.get("targeted") == "Mafia"]
-    for user_id in killed_players:
-        game["players"][user_id]["alive"] = False
-
-    # Check for win conditions
-    await check_win_condition(client, chat_id)
-
-    message_text = "Night phase is over. Here's what happened:\n\n"
-    message_text += "\n".join([f"💀 {game['players'][user_id]['name']} was killed!" for user_id in killed_players])
-    
-    message_text += "\n\nTime to vote! Who should be lynched?"
-    buttons = [[InlineKeyboardButton(f"{info['name']}", callback_data=f"vote_{user_id}")]
-               for user_id, info in game["players"].items() if info["alive"]]
-    
-    await app.send_message(chat_id, message_text, reply_markup=InlineKeyboardMarkup(buttons))
-
-@app.on_callback_query(filters.regex("vote_"))
-def vote(client, callback_query: CallbackQuery):
-    chat_id = callback_query.message.chat.id
-    _, target_id = callback_query.data.split("_")
-    games[chat_id]["players"][int(target_id)]["votes"] = games[chat_id]["players"].get("votes", 0) + 1
-    callback_query.answer("Vote recorded!", show_alert=True)
-
 async def check_win_condition(client, chat_id):
     game = games.get(chat_id, None)
     if not game:
@@ -172,4 +169,4 @@ async def check_win_condition(client, chat_id):
         del games[chat_id]
         return
         
-app.run() 
+app.run()
