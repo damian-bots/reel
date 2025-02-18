@@ -22,7 +22,7 @@ roles = {
 def start(client, message):
     message.reply_text(
         "Welcome to Mafia Game! Click below to start a new game.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Start Game", callback_data="register_players")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Start Game", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
     )
 
 @app.on_callback_query(filters.regex("register_players"))
