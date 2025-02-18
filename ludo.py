@@ -27,17 +27,17 @@ def start(client, message):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Start Game", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
     )
 
-@app.on_callback_query(filters.regex("register_players"))
-async def register_players(client, callback_query: CallbackQuery):
-    chat_id = callback_query.message.chat.id
+@app.on_message(filters.command("start"))
+async def register_players(client, message):
+    chat_id = message.chat.id
 
     if chat_id in games:
-        callback_query.answer("A game is already in progress!", show_alert=True)
+        message.answer("A game is already in progress!", show_alert=True)
         return
 
     games[chat_id] = {"players": {}, "status": "registering"}
     
-    callback_query.message.edit(
+    message.edit(
         "A new Mafia game has started!\n\nPlayers, click below to register in PM.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register in PM", url=f"https://t.me/{app.me.username}?start={chat_id}")]])
     )
