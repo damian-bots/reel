@@ -1,174 +1,88 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ChatPermissions
-import random
-import asyncio
-import time
+import os
+import requests
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from threading import Lock
 
-app = Client("mafia_bot", api_id=24620300, api_hash="9a098f01aa56c836f2e34aee4b7ef963", bot_token="7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI")
+# Replace with your bot token
+BOT_TOKEN = "7290359629:AAEMevajZ9xO9YIeDn46uel0nfKNse2HMQI"
 
-games = {}
-registered_users = {}
+# Dictionary to track downloads per user (Use Redis or MongoDB for persistence)
+user_downloads = {}
+lock = Lock()
 
-roles = {
-    "Villager": "No special abilities.",
-    "Doctor": "Heals one player per night.",
-    "Mafia": "Works with the Mafia to kill a player each night.",
-    "Detective": "Investigates one player per night.",
-    "Godfather": "Leads the Mafia and makes the final kill decision.",
-    "Jester": "Wins if lynched during the day.",
-    "Serial Killer": "Kills one player per night, independent of the Mafia."
-}
+# Function to extract direct download URL from TeraBox
+def get_direct_link(terabox_url):
+    session = requests.Session()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    response = session.get(terabox_url, headers=headers)
+    
+    if "direct_link" in response.text:
+        # Extract direct download link (modify this based on TeraBox's structure)
+        direct_link = response.text.split('direct_link":"')[1].split('"')[0]
+        return direct_link
+    return None
 
-NIGHT_GIF = "https://media.giphy.com/media/LmNwrBhejkK9EFP504/giphy.gif"
-DAY_GIF = "https://media.giphy.com/media/WF9evUeT4cudYZtPVF/giphy.gif"
+# Function to download the video
+def download_video(url, chat_id):
+    filename = f"terabox_{chat_id}.mp4"
+    response = requests.get(url, stream=True)
 
-@app.on_message(filters.command("help"))
-async def start(client, message):
-    await message.reply_text(
-        "**🎭 Welcome to the Mafia Game! 🎭**\n\n"
-        "Click **/register** to join the next game!"
-    )
+    with open(filename, "wb") as file:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            file.write(chunk)
 
-@app.on_message(filters.command("register"))
-async def register(client, message):
-    chat_id = message.chat.id
-    if chat_id in games:
-        await message.reply_text("⚠️ A game is already in progress!")
+    return filename
+
+# Handle /start command
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text("Send me a TeraBox video URL, and I'll download it for you! You can download up to 5 files.")
+
+# Handle messages containing URLs
+def handle_message(update: Update, context: CallbackContext) -> None:
+    chat_id = update.message.chat_id
+    url = update.message.text.strip()
+
+    if "terabox" not in url:
+        update.message.reply_text("Please send a valid TeraBox video link.")
         return
 
-    games[chat_id] = {"players": {}, "status": "registering"}
-
-    bot_info = await client.get_me()
-    bot_username = bot_info.username
-
-    await message.reply_text(
-        "Players, click below to register in **PM**.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Register", url=f"https://t.me/{bot_username}?start=register_{chat_id}")]])
-    )
-
-    await asyncio.sleep(30)
-
-    if len(games[chat_id]["players"]) < 4:
-        await app.send_message(chat_id, "⚠️ Not enough players (min 4). Try again later.")
-        del games[chat_id]
-    else:
-        await start_game(client, chat_id)
-
-@app.on_message(filters.private & filters.command("start"))
-async def private_start(client, message):
-    if message.text.startswith("/start register_"):
-        chat_id = int(message.text.split("_")[-1])
-        user_id = message.from_user.id
-
-        if chat_id not in games or games[chat_id]["status"] != "registering":
-            await message.reply_text("⚠️ No active game available!")
+    with lock:
+        user_downloads.setdefault(chat_id, 0)
+        if user_downloads[chat_id] >= 5:
+            update.message.reply_text("You have reached your 5-file limit. Please try again later.")
             return
+        user_downloads[chat_id] += 1
 
-        if user_id in games[chat_id]["players"]:
-            await message.reply_text("✅ You are already registered!")
-            return
+    update.message.reply_text("Fetching download link, please wait...")
 
-        registered_users[user_id] = chat_id
-        await message.reply_text(
-            "Click below to confirm registration.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm", callback_data="confirm_register")]])
-        )
-
-@app.on_callback_query(filters.regex("confirm_register"))
-async def confirm_registration(client, callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    chat_id = registered_users.get(user_id)
-
-    if not chat_id or chat_id not in games or games[chat_id]["status"] != "registering":
-        await callback_query.answer("⚠️ No active game found!", show_alert=True)
+    direct_url = get_direct_link(url)
+    if not direct_url:
+        update.message.reply_text("Failed to retrieve the direct download link. The link may be expired or protected.")
         return
 
-    username = callback_query.from_user.username or callback_query.from_user.first_name
-    games[chat_id]["players"][user_id] = {"name": username, "role": None, "alive": True, "lynched": False}
+    update.message.reply_text("Downloading video, please wait...")
 
-    await callback_query.message.edit_text("✅ Registration successful! Wait for the game to start.")
-
-    try:
-        await app.send_message(chat_id, f"🔹 {username} has joined the game!")
-    except:
-        pass
-
-async def start_game(client, chat_id):
-    game = games[chat_id]
-    game["status"] = "running"
-
-    player_list = list(game["players"].keys())
-    random.shuffle(player_list)
-
-    assigned_roles = assign_roles(len(player_list))
-    for user_id, role in zip(player_list, assigned_roles):
-        game["players"][user_id]["role"] = role
-        try:
-            await app.send_message(user_id, f"🎭 Your role: {role}\n\n{roles[role]}")
-        except:
-            pass
-
-    await night_phase(client, chat_id)
-
-def assign_roles(player_count):
-    role_distribution = ["Mafia", "Doctor"]
-    if player_count >= 6:
-        role_distribution.append("Detective")
-    if player_count >= 8:
-        role_distribution.append("Godfather")
-    if player_count >= 9:
-        role_distribution.append("Jester")
-    if player_count >= 12:
-        role_distribution.append("Serial Killer")
-
-    role_distribution += ["Villager"] * (player_count - len(role_distribution))
-    random.shuffle(role_distribution)
-    return role_distribution
-
-async def night_phase(client, chat_id):
-    await app.send_animation(chat_id, NIGHT_GIF, caption="🌙 Night falls. Everyone goes to sleep...")
-    await asyncio.sleep(5)
-
-    await day_phase(client, chat_id)
-
-async def day_phase(client, chat_id):
-    await app.send_animation(chat_id, DAY_GIF, caption="☀️ The sun rises. A new day begins!")
-    await asyncio.sleep(5)
-
-    buttons = [[InlineKeyboardButton(game["players"][uid]["name"], callback_data=f"lynch_{uid}")]
-               for uid, data in games[chat_id]["players"].items() if data["alive"]]
-
-    await app.send_message(
-        chat_id, "🗳 Vote to lynch a player (30s):",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-    await asyncio.sleep(30)
-
-    target_id = random.choice([uid for uid, data in games[chat_id]["players"].items() if data["alive"]])
-    games[chat_id]["players"][target_id]["alive"] = False
-
-    await mute_player(chat_id, target_id)
-    await app.send_message(chat_id, f"⚖️ {games[chat_id]['players'][target_id]['name']} was lynched!")
-
-    await check_win_condition(client, chat_id)
-
-async def mute_player(chat_id, user_id):
-    try:
-        await app.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
-    except:
-        pass
-
-async def check_win_condition(client, chat_id):
-    game = games[chat_id]
-    mafia_alive = any(data["role"] in ["Mafia", "Godfather"] and data["alive"] for data in game["players"].values())
-    villagers_alive = any(data["role"] == "Villager" and data["alive"] for data in game["players"].values())
-
-    if not mafia_alive:
-        await app.send_message(chat_id, "🎉 Villagers win!")
-    elif not villagers_alive:
-        await app.send_message(chat_id, "💀 Mafia wins!")
+    filename = download_video(direct_url, chat_id)
+    if os.path.exists(filename):
+        update.message.reply_video(video=open(filename, "rb"))
+        os.remove(filename)  # Clean up
     else:
-        await night_phase(client, chat_id)
+        update.message.reply_text("Failed to download the video.")
 
-app.run()
+# Main function
+def main():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
